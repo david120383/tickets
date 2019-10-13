@@ -1,0 +1,6 @@
+{
+    "require": {
+        "zendesk/zendesk_api_client_php": "^2.2",
+        "twbs/bootstrap": "^4.3"
+    }
+}
