@@ -18,29 +18,48 @@ if ($token_id == "") {
         isset($result['account']['email'])) {
 
         try {
-//            $config = parse_ini_file('./config.ini');
             $config = getconfig();
             $subdomain = $config['subdomain'];
-            $username = $config['username'];
+            $username_config = $config['username'];
             $token = $config['token'];
+            $username = $result['account']['username'];
+            $email = $result['account']['email'];
 
             $client = new ZendeskAPI($subdomain);
-            $client->setAuth('basic', ['username' => $username, 'token' => $token]);
+            $client->setAuth('basic', ['username' => $username_config, 'token' => $token]);
 
-            $params = array('query' => $result['account']['email']);
-            $user = $client->users()->search($params);
-            $user = json_decode(json_encode($user), true);
+            $user = get_user($client, $email);
+
+            //在Console注册且登陆过Zendesk
             if (isset($user['users']) &&
                 isset($user['users'][0]) &&
                 isset($user['users'][0]['id'])) {
-                $requesterId = $user['users'][0]['id'];
-
-                $username = $result['account']['username'];
-                $email = $result['account']['email'];
-                $tickets = $client->users($requesterId)->tickets()->requested();
-                $array = json_decode(json_encode($tickets), true);
+                $array = get_user_tickets($client, $user['users'][0]['id']);
             } else {
-                header('Location: error.php?token_id=' . $token_id);
+                //在Console注册但是没登录过Zendesk，需要调用接口注册Zendesk
+                $token_id = $_GET['token_id'];
+                $postdata['token_id '] = $token_id;
+                $ubibot_url2 = "http://api.ubibot.io/zendesk/sso/login_with_token?token_id=" . $token_id;
+                $result2 = posturl($ubibot_url2, $postdata);
+                //注册Zendesk成功，需要访问location的地址才算真的注册成功
+                if (isset($result2['result']) &&
+                    isset($result2['location']) &&
+                    isset($result2['result']) == "success") {
+                    $zendesk_register_url = $result2['location'];
+                    //访问location的地址，完成注册
+                    $result3 = geturl($zendesk_register_url);
+
+                    $usernew = get_user($client, $email);
+                    if (isset($usernew['users']) &&
+                        isset($usernew['users'][0]) &&
+                        isset($usernew['users'][0]['id'])) {
+                        $array = get_user_tickets($client, $usernew['users'][0]['id']);
+                    } else {
+                        header('Location: error.php?token_id=' . $token_id);
+                    }
+                } else {
+                    header('Location: error.php?token_id=' . $token_id);
+                }
             }
         } catch (\Zendesk\API\Exceptions\ApiResponseException $e) {
             header('Location: error.php?token_id=' . $token_id);
@@ -49,6 +68,21 @@ if ($token_id == "") {
         header('Location: error.php?token_id=' . $token_id);
     }
 }
+function get_user($client, $email)
+{
+    $params = array('query' => $email);
+    $user = $client->users()->search($params);
+    $user = json_decode(json_encode($user), true);
+    return $user;
+}
+
+function get_user_tickets($client, $requesterId)
+{
+    $tickets = $client->users($requesterId)->tickets()->requested();
+    $array = json_decode(json_encode($tickets), true);
+    return $array;
+}
+
 ?>
 <!DOCTYPE html>
 <html lang="zh-CN">
